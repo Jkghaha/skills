@@ -49,7 +49,7 @@ def decode_stdin_bytes(raw: bytes) -> str:
         except UnicodeDecodeError:
             continue
 
-    fail("stdin 涓嶆槸鍙瘑鍒紪鐮佺殑鏂囨湰銆?, code="invalid_stdin_encoding", details={"tried": tried})
+    fail("stdin 不是可识别编码的文本。", code="invalid_stdin_encoding", details={"tried": tried})
 
 
 def fail(message: str, *, code: str = "error", details: dict[str, Any] | None = None) -> NoReturn:
@@ -64,15 +64,15 @@ def read_stdin_json() -> dict[str, Any]:
     raw_bytes = sys.stdin.buffer.read()
     raw = decode_stdin_bytes(raw_bytes)
     if not raw.strip():
-        fail("stdin 涓虹┖锛屾湭鏀跺埌 JSON 杞借嵎銆?, code="empty_stdin")
+        fail("stdin 为空，未收到 JSON 载荷。", code="empty_stdin")
 
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
-        fail("stdin 涓嶆槸鍚堟硶 JSON銆?, code="invalid_json", details={"reason": str(exc)})
+        fail("stdin 不是合法 JSON。", code="invalid_json", details={"reason": str(exc)})
 
     if not isinstance(payload, dict):
-        fail("JSON 鏍硅妭鐐瑰繀椤绘槸瀵硅薄銆?, code="invalid_payload_type")
+        fail("JSON 根节点必须是对象。", code="invalid_payload_type")
 
     return payload
 
@@ -115,12 +115,12 @@ def read_env_config() -> dict[str, Any]:
         if not value
     ]
     if missing:
-        fail("缂哄皯 SMTP 鐜鍙橀噺銆?, code="missing_env", details={"missing": missing})
+        fail("缺少 SMTP 环境变量。", code="missing_env", details={"missing": missing})
 
     try:
         port = int(port_raw)
     except ValueError:
-        fail("SMTP 绔彛涓嶆槸鍚堟硶鏁存暟銆?, code="invalid_port", details={"value": port_raw})
+        fail("SMTP 端口不是合法整数。", code="invalid_port", details={"value": port_raw})
 
     return {
         "host": host,
@@ -137,18 +137,18 @@ def normalize_recipients(value: Any) -> list[str]:
         candidates = []
         for item in value:
             if not isinstance(item, str):
-                fail("鏀朵欢浜哄垪琛ㄥ繀椤诲叏閮ㄤ负瀛楃涓层€?, code="invalid_recipients")
+                fail("收件人列表必须全部为字符串。", code="invalid_recipients")
             candidates.append(item.strip())
     else:
-        fail("to 蹇呴』鏄瓧绗︿覆鎴栧瓧绗︿覆鏁扮粍銆?, code="invalid_recipients")
+        fail("to 必须是字符串或字符串数组。", code="invalid_recipients")
 
     recipients = [item for item in candidates if item]
     if not recipients:
-        fail("鑷冲皯闇€瑕佷竴涓湁鏁堟敹浠朵汉銆?, code="missing_recipients")
+        fail("至少需要一个有效收件人。", code="missing_recipients")
 
     invalid = [item for item in recipients if "@" not in item or item.startswith("@") or item.endswith("@")]
     if invalid:
-        fail("瀛樺湪鏄庢樉鏃犳晥鐨勬敹浠朵汉鍦板潃銆?, code="invalid_recipients", details={"invalid": invalid})
+        fail("存在明显无效的收件人地址。", code="invalid_recipients", details={"invalid": invalid})
 
     return recipients
 
@@ -163,21 +163,21 @@ def normalize_attachments(value: Any) -> list[Path]:
         raw_items = []
         for item in value:
             if not isinstance(item, str):
-                fail("attachments 蹇呴』鏄瓧绗︿覆鏁扮粍銆?, code="invalid_attachments")
+                fail("attachments 必须是字符串数组。", code="invalid_attachments")
             cleaned = item.strip()
             if cleaned:
                 raw_items.append(cleaned)
     else:
-        fail("attachments 蹇呴』鏄瓧绗︿覆鎴栧瓧绗︿覆鏁扮粍銆?, code="invalid_attachments")
+        fail("attachments 必须是字符串或字符串数组。", code="invalid_attachments")
 
     paths = [Path(item) for item in raw_items]
     for path in paths:
         if not path.is_absolute():
-            fail("闄勪欢璺緞蹇呴』鏄粷瀵硅矾寰勩€?, code="relative_attachment_path", details={"path": str(path)})
+            fail("附件路径必须是绝对路径。", code="relative_attachment_path", details={"path": str(path)})
         if not path.exists():
-            fail("闄勪欢涓嶅瓨鍦ㄣ€?, code="attachment_not_found", details={"path": str(path)})
+            fail("附件不存在。", code="attachment_not_found", details={"path": str(path)})
         if not path.is_file():
-            fail("闄勪欢璺緞涓嶆槸鏂囦欢銆?, code="attachment_not_file", details={"path": str(path)})
+            fail("附件路径不是文件。", code="attachment_not_file", details={"path": str(path)})
     return paths
 
 
@@ -185,13 +185,13 @@ def require_string(payload: dict[str, Any], key: str, *, required: bool = True) 
     value = payload.get(key)
     if value is None:
         if required:
-            fail(f"缂哄皯蹇呭～瀛楁: {key}", code="missing_field", details={"field": key})
+            fail(f"缺少必填字段: {key}", code="missing_field", details={"field": key})
         return None
     if not isinstance(value, str):
-        fail(f"瀛楁 {key} 蹇呴』鏄瓧绗︿覆銆?, code="invalid_field_type", details={"field": key})
+        fail(f"字段 {key} 必须是字符串。", code="invalid_field_type", details={"field": key})
     normalized = value.strip()
     if required and not normalized:
-        fail(f"瀛楁 {key} 涓嶈兘涓虹┖銆?, code="empty_field", details={"field": key})
+        fail(f"字段 {key} 不能为空。", code="empty_field", details={"field": key})
     return normalized or None
 
 
@@ -204,7 +204,7 @@ def build_message(
     attachments: list[Path],
 ) -> EmailMessage:
     if not text_body and not html_body:
-        fail("text_body 鍜?html_body 鑷冲皯瑕佹彁渚涗竴涓€?, code="missing_body")
+        fail("text_body 和 html_body 至少要提供一个。", code="missing_body")
 
     message = EmailMessage()
     message["From"] = sender
@@ -214,7 +214,7 @@ def build_message(
     if text_body:
         message.set_content(text_body)
     else:
-        message.set_content("姝ら偖浠跺寘鍚?HTML 鍐呭锛岃浣跨敤鏀寔 HTML 鐨勫鎴风鏌ョ湅銆?)
+        message.set_content("此邮件包含 HTML 内容，请使用支持 HTML 的客户端查看。")
 
     if html_body:
         message.add_alternative(html_body, subtype="html")
@@ -256,19 +256,19 @@ def send_message(config: dict[str, Any], message: EmailMessage, recipients: list
                 server.login(username, password)
                 server.send_message(message, from_addr=username, to_addrs=recipients)
     except smtplib.SMTPAuthenticationError:
-        fail("SMTP 璁よ瘉澶辫触锛岃妫€鏌ラ偖绠辫处鍙锋垨鎺堟潈鐮併€?, code="smtp_auth_failed")
+        fail("SMTP 认证失败，请检查邮箱账号或授权码。", code="smtp_auth_failed")
     except smtplib.SMTPException as exc:
-        fail("SMTP 鍙戦€佸け璐ャ€?, code="smtp_error", details={"reason": str(exc)})
+        fail("SMTP 发送失败。", code="smtp_error", details={"reason": str(exc)})
     except OSError as exc:
-        fail("杩炴帴 SMTP 鏈嶅姟鍣ㄥけ璐ャ€?, code="smtp_connection_error", details={"reason": str(exc)})
+        fail("连接 SMTP 服务器失败。", code="smtp_connection_error", details={"reason": str(exc)})
 
 
 def main() -> None:
     configure_stdio()
-    parser = argparse.ArgumentParser(description="閫氳繃 SMTP 鍙戦€侀偖浠躲€?)
-    parser.add_argument("--stdin-json", action="store_true", help="浠?stdin 璇诲彇 JSON 杞借嵎")
-    parser.add_argument("--validate-config", action="store_true", help="浠呮牎楠岀幆澧冨彉閲忛厤缃?)
-    parser.add_argument("--dry-run", action="store_true", help="浠呮牎楠岃緭鍏ュ苟杈撳嚭鎽樿锛屼笉鐪熸鍙戦€?)
+    parser = argparse.ArgumentParser(description="通过 SMTP 发送邮件。")
+    parser.add_argument("--stdin-json", action="store_true", help="从 stdin 读取 JSON 载荷")
+    parser.add_argument("--validate-config", action="store_true", help="仅校验环境变量配置")
+    parser.add_argument("--dry-run", action="store_true", help="仅校验输入并输出摘要，不真正发送")
     args = parser.parse_args()
 
     config = read_env_config()
@@ -277,7 +277,7 @@ def main() -> None:
         print_json(
             {
                 "status": "ok",
-                "message": "SMTP 鐜鍙橀噺宸插氨缁€?,
+                "message": "SMTP 环境变量已就绪。",
                 "host": config["host"],
                 "port": config["port"],
                 "username": config["username"],
@@ -286,7 +286,7 @@ def main() -> None:
         return
 
     if not args.stdin_json:
-        fail("璇蜂娇鐢?--stdin-json 骞堕€氳繃 stdin 鎻愪緵 JSON 杞借嵎銆?, code="missing_input_mode")
+        fail("请使用 --stdin-json 并通过 stdin 提供 JSON 载荷。", code="missing_input_mode")
 
     payload = read_stdin_json()
     recipients = normalize_recipients(payload.get("to"))
