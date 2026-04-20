@@ -1,11 +1,11 @@
 import argparse
 import json
-import locale
 import mimetypes
 import os
 import smtplib
 import ssl
 import sys
+import locale
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Iterable, NoReturn
@@ -118,7 +118,7 @@ def read_env_config() -> dict[str, Any]:
         fail("缺少 SMTP 环境变量。", code="missing_env", details={"missing": missing})
 
     try:
-        port = int(port_raw)
+        port = int(port_raw)  # type: ignore[arg-type]
     except ValueError:
         fail("SMTP 端口不是合法整数。", code="invalid_port", details={"value": port_raw})
 
@@ -269,6 +269,12 @@ def main() -> None:
     parser.add_argument("--stdin-json", action="store_true", help="从 stdin 读取 JSON 载荷")
     parser.add_argument("--validate-config", action="store_true", help="仅校验环境变量配置")
     parser.add_argument("--dry-run", action="store_true", help="仅校验输入并输出摘要，不真正发送")
+    # 简单命令行参数
+    parser.add_argument("--to", type=str, help="收件人，逗号分隔")
+    parser.add_argument("--subject", type=str, help="邮件主题")
+    parser.add_argument("--body", type=str, help="邮件正文（纯文本）")
+    parser.add_argument("--html", type=str, help="邮件正文（HTML）")
+    parser.add_argument("--attach", type=str, help="附件路径，逗号分隔")
     args = parser.parse_args()
 
     config = read_env_config()
@@ -285,20 +291,34 @@ def main() -> None:
         )
         return
 
-    if not args.stdin_json:
-        fail("请使用 --stdin-json 并通过 stdin 提供 JSON 载荷。", code="missing_input_mode")
+    # 支持简单命令行参数
+    if args.to or args.subject or args.body or args.html:
+        if not args.to or not (args.subject or args.body or args.html):
+            fail("使用简单参数时，--to 和 (--subject 或 --body 或 --html) 都是必填的。", code="missing_params")
+        recipients = normalize_recipients(args.to)
+        text_body = args.body
+        html_body = args.html
+        attachments = normalize_attachments(args.attach)
+    elif args.stdin_json:
+        payload = read_stdin_json()
+        recipients = normalize_recipients(payload.get("to"))
+        subject = require_string(payload, "subject")
+        text_body = require_string(payload, "text_body", required=False)
+        html_body = require_string(payload, "html_body", required=False)
+        attachments = normalize_attachments(payload.get("attachments"))
+    else:
+        fail("请使用 --stdin-json 或简单参数 --to --subject --body。", code="missing_input_mode")
 
-    payload = read_stdin_json()
-    recipients = normalize_recipients(payload.get("to"))
-    subject = require_string(payload, "subject")
-    text_body = require_string(payload, "text_body", required=False)
-    html_body = require_string(payload, "html_body", required=False)
-    attachments = normalize_attachments(payload.get("attachments"))
+    # 如果使用简单参数，subject 是必填的
+    if args.to and not args.stdin_json:
+        subject = args.subject or ""
+    else:
+        subject = require_string(payload, "subject")
 
     message = build_message(
         sender=config["username"],
         recipients=recipients,
-        subject=subject or "",
+        subject=subject,
         text_body=text_body,
         html_body=html_body,
         attachments=attachments,
