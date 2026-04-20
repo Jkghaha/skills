@@ -60,6 +60,28 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new()
 
 ## 输入约定
 
+### 方式一：简单命令行参数（推荐）
+
+```powershell
+python send_email.py --to "test@example.com" --subject "主题" --body "正文"
+python send_email.py --to "a@example.com,b@example.com" --subject "主题" --html "<h1>HTML正文</h1>"
+python send_email.py --to "test@example.com" --subject "带附件" --body "正文" --attach "C:\path\file.pdf"
+```
+
+参数说明：
+- `--to`: 收件人，逗号分隔（必填）
+- `--subject`: 邮件主题（必填）
+- `--body`: 纯文本正文（与 --html 二选一）
+- `--html`: HTML 正文（与 --body 二选一）
+- `--attach`: 附件路径，逗号分隔
+
+### 方式二：stdin JSON
+
+```powershell
+$payload = @{ to = @("test@example.com"); subject = "主题"; text_body = "正文" } | ConvertTo-Json -Compress
+$payload | python send_email.py --stdin-json
+```
+
 stdin JSON 支持这些字段：
 
 - `to`: 字符串或字符串数组
